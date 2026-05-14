@@ -9,7 +9,6 @@ from datetime import date, timedelta
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Оценка опционов — Блэк-Шоулс",
-    page_icon="📈",
     layout="wide",
 )
 
@@ -168,11 +167,11 @@ def black_scholes(S, K, T, r, sigma):
 
 # ─── UI ───────────────────────────────────────────────────────────────────────
 
-st.markdown("# 📊 Оценка опционов")
+st.markdown("# Оценка опционов")
 st.markdown("**Модель Блэка-Шоулса** · Расчёт цен колл и пут опционов")
 st.divider()
 
-col_left, col_right = st.columns([1, 1.6], gap="large")
+col_left, col_right = st.columns([1, 2], gap="large")
 
 # ════════════════════════════════════════
 #  LEFT PANEL — inputs
@@ -279,12 +278,7 @@ with col_left:
                                 min_value=0.0, max_value=100.0, format="%.4f")
         r = r_pct / 100.0
     with c6:
-        sigma_input = st.number_input(
-            "σ — волатильность",
-            value=round(sigma_calc, 6) if sigma_calc else 0.2,
-            min_value=0.0001, max_value=10.0, format="%.6f",
-            help="Считается автоматически, но можно ввести вручную",
-        )
+        sigma_input = round(sigma_calc, 6) if sigma_calc else 0.2
 
 
 # ════════════════════════════════════════

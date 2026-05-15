@@ -8,6 +8,7 @@ from datetime import date, timedelta
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+matplotlib.use("Agg")
 
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(

@@ -171,7 +171,7 @@ st.markdown("# Оценка опционов")
 st.markdown("**Модель Блэка-Шоулса** · Расчёт цен колл и пут опционов")
 st.divider()
 
-col_left, col_right = st.columns([1, 2], gap="large")
+col_left, col_right = st.columns([1, 3], gap="large")
 
 # ════════════════════════════════════════
 #  LEFT PANEL — inputs
@@ -284,7 +284,7 @@ with col_left:
 # ════════════════════════════════════════
 #  RIGHT PANEL — results + charts
 # ════════════════════════════════════════
-with col_right:
+with (col_right):
 
     # ── 04 Black-Scholes ──────────────────────────────────────────────────────
     st.markdown('<p class="section-header">04 · Результаты модели Блэка-Шоулса</p>',
@@ -344,7 +344,7 @@ with col_right:
                           + r * K * norm.cdf(-d_minus) * np.exp(-r * T_val)) / 365
 
         greeks_df = pd.DataFrame({
-            "Грек": ["Δ Delta", "Γ Gamma", "ν Vega", "Θ Theta (в день)"],
+            "Грек": ["Δ Delta", "Γ Gamma", "ν Vega", "Θ Theta"],
             "Колл": [f"{delta_call_val:.6f}", f"{gamma_val:.6f}",
                      f"{vega_val:.4f}",       f"{theta_call_val:.6f}"],
             "Пут":  [f"{delta_put_val:.6f}",  f"{gamma_val:.6f}",
@@ -353,7 +353,6 @@ with col_right:
         st.dataframe(greeks_df, hide_index=True, use_container_width=True)
 
         parity = call_price - put_price - (S - K * np.exp(-r * T_val))
-        st.caption(f"Паритет колл-пут: C − P − (S − K·e⁻ʳᵀ) = {parity:.8f} (≈ 0 ✓)")
 
     else:
         st.warning("Введите корректные параметры для расчёта.")
@@ -361,8 +360,6 @@ with col_right:
     # ── 06 Charts ─────────────────────────────────────────────────────────────
     if not prices.empty:
         st.markdown("")
-        st.markdown('<p class="section-header">06 · Исторические графики</p>',
-                    unsafe_allow_html=True)
 
         period_options = {
             "1 месяц":   30,
@@ -386,82 +383,235 @@ with col_right:
         # Strip timezone just in case
         prices_plot.index = pd.to_datetime(prices_plot.index).tz_localize(None)
 
-        tab1, tab2, tab3 = st.tabs([
-            "📈 Цена актива",
-            "💰 Цены опционов во времени",
-            "📊 Чувствительность к цене",
+        #tab1, tab2,
+        tab3, tab4, tab5, tab6 = st.tabs([
+            # " Цена актива",
+            # " Цены опционов",
+            "Δ Delta",
+            "Γ Gamma",
+            "ν Vega",
+            "Θ Theta",
         ])
 
-        # ── Tab 1: historical price ───────────────────────────────────────────
-        with tab1:
-            st.markdown("**Историческая цена актива**")
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
 
-            price_df = pd.DataFrame(
-                {
-                    "Цена актива": prices_plot.values.astype(float),
-                    "Страйк K":    float(K),
-                },
-                index=prices_plot.index,
-            )
-            st.line_chart(price_df, color=["#e3b341", "#8b949e"], height=340)
+        # Shared style for all greek plots
+        STYLE = {
+            "bg":       "#0d1117",
+            "ax_bg":    "#161b22",
+            "grid":     "#21262d",
+            "text":     "#e6edf3",
+            "call":     "#3fb950",
+            "put":      "#f85149",
+            "neutral":  "#58a6ff",
+            "strike":   "#e3b341",
+            "spot":     "#8b949e",
+        }
 
-            s1, s2, s3, s4 = st.columns(4)
-            cur = float(prices_plot.iloc[-1])
-            mn  = float(prices_plot.min())
-            mx  = float(prices_plot.max())
-            chg = (cur / float(prices_plot.iloc[0]) - 1) * 100
-            s1.metric("Текущая цена",   f"{cur:.2f}")
-            s2.metric("Мин за период",  f"{mn:.2f}")
-            s3.metric("Макс за период", f"{mx:.2f}")
-            s4.metric("Изм. за период", f"{chg:+.2f}%")
+        def apply_style(fig, ax):
+            fig.patch.set_facecolor(STYLE["bg"])
+            ax.set_facecolor(STYLE["ax_bg"])
+            ax.tick_params(colors=STYLE["text"], labelsize=9)
+            ax.xaxis.label.set_color(STYLE["text"])
+            ax.yaxis.label.set_color(STYLE["text"])
+            ax.title.set_color(STYLE["text"])
+            for spine in ax.spines.values():
+                spine.set_edgecolor(STYLE["grid"])
+            ax.grid(True, color=STYLE["grid"], linestyle="--", linewidth=0.6, alpha=0.7)
 
-        # ── Tab 2: option price history ───────────────────────────────────────
-        with tab2:
-            st.markdown("**Расчётная цена колл и пут опционов на каждую дату**")
-            st.caption(
-                "Для каждой исторической цены считается цена опциона "
-                "по модели Блэка-Шоулса с текущими K, r, σ, T."
-            )
+        def add_vlines(ax, S_val, K_val):
+            ax.axvline(S_val, color=STYLE["spot"],   linestyle="--", linewidth=1.2,
+                       label=f"S₀ = {S_val:.2f}")
+            ax.axvline(K_val, color=STYLE["strike"], linestyle=":",  linewidth=1.2,
+                       label=f"K = {K_val:.2f}")
 
-            if call_price is not None:
-                hist_calls, hist_puts = [], []
-                for s_val in prices_plot.values:
-                    c, p = black_scholes(float(s_val), K, T_val, r, sigma_input)
-                    hist_calls.append(c if c is not None else np.nan)
-                    hist_puts.append(p if p is not None else np.nan)
+        # S range for all greek charts: current S ± 50%
+        S_arr = np.linspace(S * 0.5, S * 1.5, 400)
 
-                options_df = pd.DataFrame(
-                    {"Колл": hist_calls, "Пут": hist_puts},
-                    index=prices_plot.index,
-                )
-                st.line_chart(options_df, color=["#3fb950", "#f85149"], height=340)
+        # Pre-compute greeks over S_arr
+        def d_plus_arr(S_a):
+            return (np.log(S_a / K) + (r + 0.5 * sigma_input**2) * T_val) / (sigma_input * np.sqrt(T_val))
 
-                valid_calls = [x for x in hist_calls if not np.isnan(x)]
-                valid_puts  = [x for x in hist_puts  if not np.isnan(x)]
-                o1, o2, o3, o4 = st.columns(4)
-                o1.metric("Колл сейчас", f"{call_price:.4f}")
-                o2.metric("Пут сейчас",  f"{put_price:.4f}")
-                o3.metric("Колл макс",   f"{max(valid_calls):.4f}" if valid_calls else "—")
-                o4.metric("Пут макс",    f"{max(valid_puts):.4f}"  if valid_puts  else "—")
-            else:
-                st.warning("Задайте корректные параметры для расчёта.")
+        d_p = d_plus_arr(S_arr)
+        d_m = d_p - sigma_input * np.sqrt(T_val)
+        N_p = norm.pdf(d_p)
 
-        # ── Tab 3: price sensitivity ──────────────────────────────────────────
+        delta_call_arr = norm.cdf(d_p)
+        delta_put_arr  = norm.cdf(d_p) - 1
+        gamma_arr      = N_p / (S_arr * sigma_input * np.sqrt(T_val))
+        vega_arr       = S_arr * np.sqrt(T_val) * N_p
+        theta_call_arr = (-(S_arr * sigma_input * N_p) / (2 * np.sqrt(T_val))
+                          - r * K * norm.cdf(d_m) * np.exp(-r * T_val)) / 365
+        theta_put_arr  = (-(S_arr * sigma_input * N_p) / (2 * np.sqrt(T_val))
+                          + r * K * norm.cdf(-d_m) * np.exp(-r * T_val)) / 365
+
+        # # ── Tab 1: historical price ───────────────────────────────────────────
+        # with tab1:
+        #     st.markdown("**Историческая цена актива**")
+        #
+        #     price_df = pd.DataFrame(
+        #         {
+        #             "Цена актива": prices_plot.values.astype(float),
+        #             "Страйк K":    float(K),
+        #         },
+        #         index=prices_plot.index,
+        #     )
+        #     st.line_chart(price_df, color=["#e3b341", "#8b949e"], height=340)
+        #
+        #     s1, s2, s3, s4 = st.columns(4)
+        #     cur = float(prices_plot.iloc[-1])
+        #     mn  = float(prices_plot.min())
+        #     mx  = float(prices_plot.max())
+        #     chg = (cur / float(prices_plot.iloc[0]) - 1) * 100
+        #     s1.metric("Текущая цена",   f"{cur:.2f}")
+        #     s2.metric("Мин за период",  f"{mn:.2f}")
+        #     s3.metric("Макс за период", f"{mx:.2f}")
+        #     s4.metric("Изм. за период", f"{chg:+.2f}%")
+        #
+        # # ── Tab 2: option price history ───────────────────────────────────────
+        # with tab2:
+        #     st.markdown("**Расчётная цена колл и пут опционов на каждую дату**")
+        #     st.caption(
+        #         "Для каждой исторической цены считается цена опциона "
+        #         "по модели Блэка-Шоулса с текущими K, r, σ, T."
+        #     )
+        #
+        #     if call_price is not None:
+        #         hist_calls, hist_puts = [], []
+        #         for s_val in prices_plot.values:
+        #             c, p = black_scholes(float(s_val), K, T_val, r, sigma_input)
+        #             hist_calls.append(c if c is not None else np.nan)
+        #             hist_puts.append(p if p is not None else np.nan)
+        #
+        #         options_df = pd.DataFrame(
+        #             {"Колл": hist_calls, "Пут": hist_puts},
+        #             index=prices_plot.index,
+        #         )
+        #         st.line_chart(options_df, color=["#3fb950", "#f85149"], height=340)
+        #
+        #         valid_calls = [x for x in hist_calls if not np.isnan(x)]
+        #         valid_puts  = [x for x in hist_puts  if not np.isnan(x)]
+        #         o1, o2, o3, o4 = st.columns(4)
+        #         o1.metric("Колл сейчас", f"{call_price:.4f}")
+        #         o2.metric("Пут сейчас",  f"{put_price:.4f}")
+        #         o3.metric("Колл макс",   f"{max(valid_calls):.4f}" if valid_calls else "—")
+        #         o4.metric("Пут макс",    f"{max(valid_puts):.4f}"  if valid_puts  else "—")
+        #     else:
+        #         st.warning("Задайте корректные параметры для расчёта.")
+
+        # ── Tab 3: Delta ──────────────────────────────────────────────────────
         with tab3:
-            st.markdown("**Цена опциона в зависимости от цены актива**")
-            st.caption("Сечение при фиксированных T, r, σ. Ось X — цена базового актива.")
-
+            st.caption("Δ Delta — чувствительность цены опциона к изменению цены базового актива. "
+                       "Диапазон: текущая цена S₀ ±50%.")
             if call_price is not None:
-                S_range    = np.linspace(S * 0.4, S * 1.6, 300)
-                sens_calls = [black_scholes(s, K, T_val, r, sigma_input)[0] for s in S_range]
-                sens_puts  = [black_scholes(s, K, T_val, r, sigma_input)[1] for s in S_range]
+                fig, ax = plt.subplots(figsize=(9, 4))
+                apply_style(fig, ax)
+                ax.plot(S_arr, delta_call_arr, color=STYLE["call"], linewidth=2,
+                        label="Delta колл-опциона")
+                ax.plot(S_arr, delta_put_arr,  color=STYLE["put"],  linewidth=2,
+                        label="Delta пут-опциона")
+                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
+                add_vlines(ax, S, K)
+                ax.set_xlabel("Цена базового актива (S)")
+                ax.set_ylabel("Delta")
+                ax.set_title("Зависимость Delta от цены базового актива")
+                ax.set_ylim(-1.05, 1.05)
+                legend = ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
+                                   labelcolor=STYLE["text"], fontsize=9)
+                fig.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
 
-                sens_df = pd.DataFrame(
-                    {"Колл": sens_calls, "Пут": sens_puts},
-                    index=np.round(S_range, 4),
-                )
-                sens_df.index.name = "Цена актива"
-                st.line_chart(sens_df, color=["#3fb950", "#f85149"], height=340)
-                st.caption(f"S₀ = {S:.2f}  |  Страйк K = {K:.2f}")
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Delta колл (текущий S)",  f"{delta_call_val:.6f}")
+                d2.metric("Delta пут (текущий S)",   f"{delta_put_val:.6f}")
+                d3.metric("Delta колл при S=K",
+                          f"{float(norm.cdf((r + 0.5*sigma_input**2)*T_val / (sigma_input*np.sqrt(T_val)))):.6f}")
+                d4.metric("Γ Gamma (текущий S)", f"{gamma_val:.6f}")
             else:
-                st.warning("Задайте корректные параметры для расчёта.")
+                st.warning("Задайте корректные параметры.")
+
+        # ── Tab 4: Gamma ──────────────────────────────────────────────────────
+        with tab4:
+            st.caption("Γ Gamma — скорость изменения Delta (одинакова для колл и пут). "
+                       "Диапазон: S₀ ±50%.")
+            if call_price is not None:
+                fig, ax = plt.subplots(figsize=(9, 4))
+                apply_style(fig, ax)
+                ax.plot(S_arr, gamma_arr, color=STYLE["neutral"], linewidth=2,
+                        label="Gamma (колл = пут)")
+                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
+                add_vlines(ax, S, K)
+                ax.set_xlabel("Цена базового актива (S)")
+                ax.set_ylabel("Gamma")
+                ax.set_title("Зависимость Gamma от цены базового актива")
+                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
+                          labelcolor=STYLE["text"], fontsize=9)
+                fig.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+
+                g1, g2 = st.columns(2)
+                g1.metric("Gamma (текущий S)", f"{gamma_val:.8f}")
+                g2.metric("Gamma макс (≈ ATM)", f"{float(gamma_arr.max()):.8f}")
+            else:
+                st.warning("Задайте корректные параметры.")
+
+        # ── Tab 5: Vega ───────────────────────────────────────────────────────
+        with tab5:
+            st.caption("ν Vega — чувствительность цены к изменению волатильности σ (одинакова для колл и пут). "
+                       "Диапазон: S₀ ±50%.")
+            if call_price is not None:
+                fig, ax = plt.subplots(figsize=(9, 4))
+                apply_style(fig, ax)
+                ax.plot(S_arr, vega_arr, color="#d2a8ff", linewidth=2,
+                        label="Vega (колл = пут)")
+                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
+                add_vlines(ax, S, K)
+                ax.set_xlabel("Цена базового актива (S)")
+                ax.set_ylabel("Vega")
+                ax.set_title("Зависимость Vega от цены базового актива")
+                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
+                          labelcolor=STYLE["text"], fontsize=9)
+                fig.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+
+                v1, v2 = st.columns(2)
+                v1.metric("Vega (текущий S)", f"{vega_val:.4f}")
+                v2.metric("Vega макс (≈ ATM)", f"{float(vega_arr.max()):.4f}")
+            else:
+                st.warning("Задайте корректные параметры.")
+
+        # ── Tab 6: Theta ──────────────────────────────────────────────────────
+        with tab6:
+            st.caption("Θ Theta — временной распад стоимости опциона (в день). "
+                       "Диапазон: S₀ ±50%.")
+            if call_price is not None:
+                fig, ax = plt.subplots(figsize=(9, 4))
+                apply_style(fig, ax)
+                ax.plot(S_arr, theta_call_arr, color=STYLE["call"], linewidth=2,
+                        label="Theta колл-опциона")
+                ax.plot(S_arr, theta_put_arr,  color=STYLE["put"],  linewidth=2,
+                        label="Theta пут-опциона")
+                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
+                add_vlines(ax, S, K)
+                ax.set_xlabel("Цена базового актива (S)")
+                ax.set_ylabel("Theta (в день)")
+                ax.set_title("Зависимость Theta от цены базового актива")
+                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
+                          labelcolor=STYLE["text"], fontsize=9)
+                fig.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+
+                t1, t2, t3, t4 = st.columns(4)
+                t1.metric("Theta колл (текущий S)", f"{theta_call_val:.6f}")
+                t2.metric("Theta пут (текущий S)",  f"{theta_put_val:.6f}")
+                t3.metric("Theta колл мин",  f"{float(theta_call_arr.min()):.6f}")
+                t4.metric("Theta пут макс",  f"{float(theta_put_arr.max()):.6f}")
+            else:
+                st.warning("Задайте корректные параметры.")

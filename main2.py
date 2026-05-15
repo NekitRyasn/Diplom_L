@@ -5,10 +5,10 @@ import pandas as pd
 from scipy.stats import norm
 import yfinance as yf
 from datetime import date, timedelta
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-matplotlib.use("Agg")
+
+# Plotly вместо matplotlib
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -397,8 +397,6 @@ with (col_right):
             "Θ Theta",
         ])
 
-        matplotlib.use("Agg")
-
         # Shared style for all greek plots
         STYLE = {
             "bg":       "#0d1117",
@@ -503,116 +501,145 @@ with (col_right):
         #     else:
         #         st.warning("Задайте корректные параметры для расчёта.")
 
-        # ── Tab 3: Delta ──────────────────────────────────────────────────────
+        # ── Общие настройки стиля ─────────────────────────────────────────────
+        STYLE = {
+            "bg": "#0d1117", "paper": "#0d1117",
+            "plot_bg": "#161b22",
+            "grid": "#21262d",
+            "text": "#e6edf3",
+            "call": "#3fb950",
+            "put": "#f85149",
+            "neutral": "#58a6ff",
+            "strike": "#e3b341",
+            "spot": "#8b949e",
+        }
+
+        S_arr = np.linspace(S * 0.5, S * 1.5, 400)
+
+
+        def d_plus_arr(S_a):
+            return (np.log(S_a / K) + (r + 0.5 * sigma_input ** 2) * T_val) / (sigma_input * np.sqrt(T_val))
+
+
+        d_p = d_plus_arr(S_arr)
+        d_m = d_p - sigma_input * np.sqrt(T_val)
+        N_p = norm.pdf(d_p)
+
+
+        # ====================== DELTA ======================
         with tab3:
-            st.caption("Δ Delta — чувствительность цены опциона к изменению цены базового актива. "
-                       "Диапазон: текущая цена S₀ ±50%.")
-            if call_price is not None:
-                fig, ax = plt.subplots(figsize=(9, 4))
-                apply_style(fig, ax)
-                ax.plot(S_arr, delta_call_arr, color=STYLE["call"], linewidth=2,
-                        label="Delta колл-опциона")
-                ax.plot(S_arr, delta_put_arr,  color=STYLE["put"],  linewidth=2,
-                        label="Delta пут-опциона")
-                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
-                add_vlines(ax, S, K)
-                ax.set_xlabel("Цена базового актива (S)")
-                ax.set_ylabel("Delta")
-                ax.set_title("Зависимость Delta от цены базового актива")
-                ax.set_ylim(-1.05, 1.05)
-                legend = ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
-                                   labelcolor=STYLE["text"], fontsize=9)
-                fig.tight_layout()
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
+            st.caption("Δ Delta — чувствительность цены опциона к изменению цены базового актива.")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=S_arr, y=delta_call_arr, name="Delta колл",
+                                     line=dict(color=STYLE["call"], width=3)))
+            fig.add_trace(go.Scatter(x=S_arr, y=delta_put_arr, name="Delta пут",
+                                     line=dict(color=STYLE["put"], width=3)))
 
-                d1, d2, d3, d4 = st.columns(4)
-                d1.metric("Delta колл (текущий S)",  f"{delta_call_val:.6f}")
-                d2.metric("Delta пут (текущий S)",   f"{delta_put_val:.6f}")
-                d3.metric("Delta колл при S=K",
-                          f"{float(norm.cdf((r + 0.5*sigma_input**2)*T_val / (sigma_input*np.sqrt(T_val)))):.6f}")
-                d4.metric("Γ Gamma (текущий S)", f"{gamma_val:.6f}")
-            else:
-                st.warning("Задайте корректные параметры.")
+            fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"],
+                          annotation_text=f"S₀ = {S:.2f}")
+            fig.add_vline(x=K, line_dash="dot", line_color=STYLE["strike"],
+                          annotation_text=f"K = {K:.2f}")
 
-        # ── Tab 4: Gamma ──────────────────────────────────────────────────────
+            fig.update_layout(
+                title="Зависимость Delta от цены базового актива",
+                xaxis_title="Цена базового актива (S)",
+                yaxis_title="Delta",
+                template="plotly_dark",
+                plot_bgcolor=STYLE["plot_bg"],
+                paper_bgcolor=STYLE["paper"],
+                font_color=STYLE["text"],
+                height=420,
+                legend=dict(bgcolor="rgba(0,0,0,0.5)", font_color=STYLE["text"])
+            )
+            fig.update_yaxes(range=[-1.05, 1.05])
+            st.plotly_chart(fig, use_container_width=True)
+
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Delta колл (текущий S)", f"{delta_call_val:.6f}")
+            d2.metric("Delta пут (текущий S)", f"{delta_put_val:.6f}")
+            d3.metric("Delta колл при S=K",
+                      f"{float(norm.cdf((r + 0.5 * sigma_input ** 2) * T_val / (sigma_input * np.sqrt(T_val)))):.6f}")
+            d4.metric("Γ Gamma (текущий S)", f"{gamma_val:.6f}")
+
+        # ====================== GAMMA ======================
         with tab4:
-            st.caption("Γ Gamma — скорость изменения Delta (одинакова для колл и пут). "
-                       "Диапазон: S₀ ±50%.")
-            if call_price is not None:
-                fig, ax = plt.subplots(figsize=(9, 4))
-                apply_style(fig, ax)
-                ax.plot(S_arr, gamma_arr, color=STYLE["neutral"], linewidth=2,
-                        label="Gamma (колл = пут)")
-                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
-                add_vlines(ax, S, K)
-                ax.set_xlabel("Цена базового актива (S)")
-                ax.set_ylabel("Gamma")
-                ax.set_title("Зависимость Gamma от цены базового актива")
-                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
-                          labelcolor=STYLE["text"], fontsize=9)
-                fig.tight_layout()
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
+            st.caption("Γ Gamma — скорость изменения Delta (одинакова для колл и пут).")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=S_arr, y=gamma_arr, name="Gamma",
+                                     line=dict(color=STYLE["neutral"], width=3)))
 
-                g1, g2 = st.columns(2)
-                g1.metric("Gamma (текущий S)", f"{gamma_val:.8f}")
-                g2.metric("Gamma макс (≈ ATM)", f"{float(gamma_arr.max()):.8f}")
-            else:
-                st.warning("Задайте корректные параметры.")
+            fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"])
+            fig.add_vline(x=K, line_dash="dot", line_color=STYLE["strike"])
 
-        # ── Tab 5: Vega ───────────────────────────────────────────────────────
+            fig.update_layout(
+                title="Зависимость Gamma от цены базового актива",
+                xaxis_title="Цена базового актива (S)",
+                yaxis_title="Gamma",
+                template="plotly_dark",
+                plot_bgcolor=STYLE["plot_bg"],
+                paper_bgcolor=STYLE["paper"],
+                font_color=STYLE["text"],
+                height=420,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            g1, g2 = st.columns(2)
+            g1.metric("Gamma (текущий S)", f"{gamma_val:.8f}")
+            g2.metric("Gamma макс (≈ ATM)", f"{float(gamma_arr.max()):.8f}")
+
+        # ====================== VEGA ======================
         with tab5:
-            st.caption("ν Vega — чувствительность цены к изменению волатильности σ (одинакова для колл и пут). "
-                       "Диапазон: S₀ ±50%.")
-            if call_price is not None:
-                fig, ax = plt.subplots(figsize=(9, 4))
-                apply_style(fig, ax)
-                ax.plot(S_arr, vega_arr, color="#d2a8ff", linewidth=2,
-                        label="Vega (колл = пут)")
-                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
-                add_vlines(ax, S, K)
-                ax.set_xlabel("Цена базового актива (S)")
-                ax.set_ylabel("Vega")
-                ax.set_title("Зависимость Vega от цены базового актива")
-                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
-                          labelcolor=STYLE["text"], fontsize=9)
-                fig.tight_layout()
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
+            st.caption("ν Vega — чувствительность к изменению волатильности.")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=S_arr, y=vega_arr, name="Vega",
+                                     line=dict(color="#d2a8ff", width=3)))
 
-                v1, v2 = st.columns(2)
-                v1.metric("Vega (текущий S)", f"{vega_val:.4f}")
-                v2.metric("Vega макс (≈ ATM)", f"{float(vega_arr.max()):.4f}")
-            else:
-                st.warning("Задайте корректные параметры.")
+            fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"])
+            fig.add_vline(x=K, line_dash="dot", line_color=STYLE["strike"])
 
-        # ── Tab 6: Theta ──────────────────────────────────────────────────────
+            fig.update_layout(
+                title="Зависимость Vega от цены базового актива",
+                xaxis_title="Цена базового актива (S)",
+                yaxis_title="Vega",
+                template="plotly_dark",
+                plot_bgcolor=STYLE["plot_bg"],
+                paper_bgcolor=STYLE["paper"],
+                font_color=STYLE["text"],
+                height=420,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            v1, v2 = st.columns(2)
+            v1.metric("Vega (текущий S)", f"{vega_val:.4f}")
+            v2.metric("Vega макс (≈ ATM)", f"{float(vega_arr.max()):.4f}")
+
+        # ====================== THETA ======================
         with tab6:
-            st.caption("Θ Theta — временной распад стоимости опциона (в день). "
-                       "Диапазон: S₀ ±50%.")
-            if call_price is not None:
-                fig, ax = plt.subplots(figsize=(9, 4))
-                apply_style(fig, ax)
-                ax.plot(S_arr, theta_call_arr, color=STYLE["call"], linewidth=2,
-                        label="Theta колл-опциона")
-                ax.plot(S_arr, theta_put_arr,  color=STYLE["put"],  linewidth=2,
-                        label="Theta пут-опциона")
-                ax.axhline(0, color=STYLE["grid"], linewidth=0.8)
-                add_vlines(ax, S, K)
-                ax.set_xlabel("Цена базового актива (S)")
-                ax.set_ylabel("Theta (в день)")
-                ax.set_title("Зависимость Theta от цены базового актива")
-                ax.legend(facecolor=STYLE["ax_bg"], edgecolor=STYLE["grid"],
-                          labelcolor=STYLE["text"], fontsize=9)
-                fig.tight_layout()
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
+            st.caption("Θ Theta — временной распад стоимости опциона (в день).")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=S_arr, y=theta_call_arr, name="Theta колл",
+                                     line=dict(color=STYLE["call"], width=3)))
+            fig.add_trace(go.Scatter(x=S_arr, y=theta_put_arr, name="Theta пут",
+                                     line=dict(color=STYLE["put"], width=3)))
 
-                t1, t2, t3, t4 = st.columns(4)
-                t1.metric("Theta колл (текущий S)", f"{theta_call_val:.6f}")
-                t2.metric("Theta пут (текущий S)",  f"{theta_put_val:.6f}")
-                t3.metric("Theta колл мин",  f"{float(theta_call_arr.min()):.6f}")
-                t4.metric("Theta пут макс",  f"{float(theta_put_arr.max()):.6f}")
-            else:
-                st.warning("Задайте корректные параметры.")
+            fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"])
+            fig.add_vline(x=K, line_dash="dot", line_color=STYLE["strike"])
+
+            fig.update_layout(
+                title="Зависимость Theta от цены базового актива",
+                xaxis_title="Цена базового актива (S)",
+                yaxis_title="Theta (в день)",
+                template="plotly_dark",
+                plot_bgcolor=STYLE["plot_bg"],
+                paper_bgcolor=STYLE["paper"],
+                font_color=STYLE["text"],
+                height=420,
+                legend=dict(bgcolor="rgba(0,0,0,0.5)", font_color=STYLE["text"])
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            t1, t2, t3, t4 = st.columns(4)
+            t1.metric("Theta колл (текущий S)", f"{theta_call_val:.6f}")
+            t2.metric("Theta пут (текущий S)", f"{theta_put_val:.6f}")
+            t3.metric("Theta колл мин", f"{float(theta_call_arr.min()):.6f}")
+            t4.metric("Theta пут макс", f"{float(theta_put_arr.max()):.6f}")

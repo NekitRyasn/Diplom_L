@@ -5,6 +5,9 @@ import pandas as pd
 from scipy.stats import norm
 import yfinance as yf
 from datetime import date, timedelta
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -393,10 +396,7 @@ with (col_right):
             "Θ Theta",
         ])
 
-        import matplotlib
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import matplotlib.ticker as mticker
 
         # Shared style for all greek plots
         STYLE = {

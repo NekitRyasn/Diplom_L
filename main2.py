@@ -373,19 +373,21 @@ with (col_right):
             "2 года":    730,
             "Всё время": None,
         }
-        selected_period = st.select_slider(
-            "Период отображения",
-            options=list(period_options.keys()),
-            value="1 год",
-        )
-        n_days = period_options[selected_period]
 
-        # prices is a guaranteed plain pd.Series after extract_series()
-        prices_plot: pd.Series = (
-            prices.iloc[-n_days:].copy() if n_days else prices.copy()
-        )
-        # Strip timezone just in case
-        prices_plot.index = pd.to_datetime(prices_plot.index).tz_localize(None)
+        # Период от 1 месяца до 2 лет
+        # selected_period = st.select_slider(
+        #     "Период отображения",
+        #     options=list(period_options.keys()),
+        #     value="1 год",
+        # )
+        # n_days = period_options[selected_period]
+        #
+        # # prices is a guaranteed plain pd.Series after extract_series()
+        # prices_plot: pd.Series = (
+        #     prices.iloc[-n_days:].copy() if n_days else prices.copy()
+        # )
+        # # Strip timezone just in case
+        # prices_plot.index = pd.to_datetime(prices_plot.index).tz_localize(None)
 
         #tab1, tab2,
         tab3, tab4, tab5, tab6 = st.tabs([
@@ -427,8 +429,8 @@ with (col_right):
             ax.axvline(K_val, color=STYLE["strike"], linestyle=":",  linewidth=1.2,
                        label=f"K = {K_val:.2f}")
 
-        # S range for all greek charts: current S ± 50%
-        S_arr = np.linspace(S * 0.5, S * 1.5, 400)
+        # S range for all greek charts: current S +- 10%
+        S_arr = np.linspace(S * 0.9, S * 1.1, 400)
 
         # Pre-compute greeks over S_arr
         def d_plus_arr(S_a):
@@ -442,10 +444,95 @@ with (col_right):
         delta_put_arr  = norm.cdf(d_p) - 1
         gamma_arr      = N_p / (S_arr * sigma_input * np.sqrt(T_val))
         vega_arr       = S_arr * np.sqrt(T_val) * N_p
+
+
+        def theta_call(S_0, K, T, r, sigma, q=0):
+            """
+            Вычисляет Тета-грек для опциона колл.
+
+            Параметры:
+            S_0 (float): Текущая цена базового актива (Spot price)
+            K (float): Цена исполнения опциона (Strike price)
+            T (float): Время до экспирации (в годах)
+            r (float): Безрисковая процентная ставка (в десятичной форме)
+            sigma (float): Волатильность (стандартное отклонение доходности актива)
+            q (float): Процентная ставка по дивидендам (в десятичной форме)
+
+            Возвращает:
+            float: Тета-грек опциона колл
+            """
+            d_plus_q = (np.log(S_0 / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            d_minus_q = d_plus_q - sigma * np.sqrt(T)
+
+            N_prime = norm.pdf(d_plus_q)
+
+            theta = (- (S_0 * sigma * N_prime * np.exp(-q * T)) / (2 * np.sqrt(T))
+                     + q * S_0 * norm.cdf(d_plus_q) * np.exp(-q * T)
+                     - r * K * norm.cdf(d_minus_q) * np.exp(-r * T))
+
+            return theta
+
+        theta_call_arr2 = theta_call(S_arr, K, T_val, r, sigma_input)
         theta_call_arr = (-(S_arr * sigma_input * N_p) / (2 * np.sqrt(T_val))
                           - r * K * norm.cdf(d_m) * np.exp(-r * T_val)) / 365
+
+
+        def theta_put(S_0, K, T, r, sigma, q=0):
+            """
+            Вычисляет Тета-грек для опциона пут.
+
+            Параметры:
+            S_0 (float): Текущая цена базового актива (Spot price)
+            K (float): Цена исполнения опциона (Strike price)
+            T (float): Время до экспирации (в годах)
+            r (float): Безрисковая процентная ставка (в десятичной форме)
+            sigma (float): Волатильность (стандартное отклонение доходности актива)
+            q (float): Процентная ставка по дивидендам (в десятичной форме)
+
+            Возвращает:
+            float: Тета-грек опциона пут
+            """
+            d_plus_q = (np.log(S_0 / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            d_minus_q = d_plus_q - sigma * np.sqrt(T)
+
+            N_prime = norm.pdf(d_plus_q)
+
+            theta = (- (S_0 * sigma * N_prime * np.exp(-q * T)) / (2 * np.sqrt(T))
+                     - q * S_0 * norm.cdf(-d_plus_q) * np.exp(-q * T)
+                     + r * K * norm.cdf(-d_minus_q) * np.exp(-r * T))
+
+            return theta
+
+        theta_put_arr2 = theta_put(S_arr, K, T_val, r, sigma_input)
         theta_put_arr  = (-(S_arr * sigma_input * N_p) / (2 * np.sqrt(T_val))
                           + r * K * norm.cdf(-d_m) * np.exp(-r * T_val)) / 365
+
+
+        def theta_call(S_0, K, T, r, sigma, q):
+            """
+            Вычисляет Тета-грек для опциона колл.
+
+            Параметры:
+            S_0 (float): Текущая цена базового актива (Spot price)
+            K (float): Цена исполнения опциона (Strike price)
+            T (float): Время до экспирации (в годах)
+            r (float): Безрисковая процентная ставка (в десятичной форме)
+            sigma (float): Волатильность (стандартное отклонение доходности актива)
+            q (float): Процентная ставка по дивидендам (в десятичной форме)
+
+            Возвращает:
+            float: Тета-грек опциона колл
+            """
+            d_plus_q = (np.log(S_0 / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            d_minus_q = d_plus_q - sigma * np.sqrt(T)
+
+            N_prime = norm.pdf(d_plus_q)
+
+            theta = (- (S_0 * sigma * N_prime * np.exp(-q * T)) / (2 * np.sqrt(T))
+                     + q * S_0 * norm.cdf(d_plus_q) * np.exp(-q * T)
+                     - r * K * norm.cdf(d_minus_q) * np.exp(-r * T))
+
+            return theta
 
         # # ── Tab 1: historical price ───────────────────────────────────────────
         # with tab1:
@@ -514,7 +601,7 @@ with (col_right):
             "spot": "#8b949e",
         }
 
-        S_arr = np.linspace(S * 0.5, S * 1.5, 400)
+        S_arr = np.linspace(S * 0.9, S * 1.1, 400)
 
 
         def d_plus_arr(S_a):
@@ -538,7 +625,7 @@ with (col_right):
             fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"],
                           annotation_text=f"S₀ = {S:.2f}")
             fig.add_vline(x=K, line_dash="dot", line_color=STYLE["strike"],
-                          annotation_text=f"K = {K:.2f}")
+                          annotation_text=f"")
 
             fig.update_layout(
                 title="Зависимость Delta от цены базового актива",
@@ -554,12 +641,6 @@ with (col_right):
             fig.update_yaxes(range=[-1.05, 1.05])
             st.plotly_chart(fig, use_container_width=True)
 
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Delta колл (текущий S)", f"{delta_call_val:.6f}")
-            d2.metric("Delta пут (текущий S)", f"{delta_put_val:.6f}")
-            d3.metric("Delta колл при S=K",
-                      f"{float(norm.cdf((r + 0.5 * sigma_input ** 2) * T_val / (sigma_input * np.sqrt(T_val)))):.6f}")
-            d4.metric("Γ Gamma (текущий S)", f"{gamma_val:.6f}")
 
         # ====================== GAMMA ======================
         with tab4:
@@ -583,10 +664,6 @@ with (col_right):
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            g1, g2 = st.columns(2)
-            g1.metric("Gamma (текущий S)", f"{gamma_val:.8f}")
-            g2.metric("Gamma макс (≈ ATM)", f"{float(gamma_arr.max()):.8f}")
-
         # ====================== VEGA ======================
         with tab5:
             st.caption("ν Vega — чувствительность к изменению волатильности.")
@@ -609,17 +686,14 @@ with (col_right):
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            v1, v2 = st.columns(2)
-            v1.metric("Vega (текущий S)", f"{vega_val:.4f}")
-            v2.metric("Vega макс (≈ ATM)", f"{float(vega_arr.max()):.4f}")
 
         # ====================== THETA ======================
         with tab6:
             st.caption("Θ Theta — временной распад стоимости опциона (в день).")
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=S_arr, y=theta_call_arr, name="Theta колл",
+            fig.add_trace(go.Scatter(x=S_arr, y=theta_call_arr2, name="Theta колл",
                                      line=dict(color=STYLE["call"], width=3)))
-            fig.add_trace(go.Scatter(x=S_arr, y=theta_put_arr, name="Theta пут",
+            fig.add_trace(go.Scatter(x=S_arr, y=theta_put_arr2, name="Theta пут",
                                      line=dict(color=STYLE["put"], width=3)))
 
             fig.add_vline(x=S, line_dash="dash", line_color=STYLE["spot"])
@@ -628,7 +702,7 @@ with (col_right):
             fig.update_layout(
                 title="Зависимость Theta от цены базового актива",
                 xaxis_title="Цена базового актива (S)",
-                yaxis_title="Theta (в день)",
+                yaxis_title="Theta",
                 template="plotly_dark",
                 plot_bgcolor=STYLE["plot_bg"],
                 paper_bgcolor=STYLE["paper"],
@@ -637,9 +711,3 @@ with (col_right):
                 legend=dict(bgcolor="rgba(0,0,0,0.5)", font_color=STYLE["text"])
             )
             st.plotly_chart(fig, use_container_width=True)
-
-            t1, t2, t3, t4 = st.columns(4)
-            t1.metric("Theta колл (текущий S)", f"{theta_call_val:.6f}")
-            t2.metric("Theta пут (текущий S)", f"{theta_put_val:.6f}")
-            t3.metric("Theta колл мин", f"{float(theta_call_arr.min()):.6f}")
-            t4.metric("Theta пут макс", f"{float(theta_put_arr.max()):.6f}")
